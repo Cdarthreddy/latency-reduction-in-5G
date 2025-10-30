@@ -1,13 +1,20 @@
 from orchestrator.environment import Node, Task
 from orchestrator.rl_agent import RLAgent
 import random
+import os
+import numpy as np
 
 class RLBasedOrchestrator:
-    def __init__(self, edge_node: Node, cloud_node: Node, episodes=100):
+    def __init__(self, edge_node, cloud_node, episodes=1000):
         self.edge = edge_node
         self.cloud = cloud_node
         self.agent = RLAgent()
         self.episodes = episodes
+        # 🔹 load pretrained weights if available
+        weights_path = "data/rl_weights.npy"
+        if os.path.exists(weights_path):
+            self.agent.weights = np.load(weights_path)
+            print("🔹 Loaded pretrained RL weights")
 
     def simulate_environment(self):
         """Run RL training episodes."""
