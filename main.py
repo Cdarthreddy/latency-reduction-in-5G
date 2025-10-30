@@ -4,57 +4,91 @@ from orchestrator.base_orchestrator import RandomOrchestrator
 from orchestrator.rule_orchestrator import RuleBasedOrchestrator
 from orchestrator.rl_orchestrator import RLBasedOrchestrator
 from orchestrator.simulation import NetworkSimulator
+from orchestrator.workload_generator import WorkloadGenerator
 import pandas as pd
-import random
 import matplotlib.pyplot as plt
 
-def run_comparison(num_tasks=100):
+def run_with_workload():
+    # Step 1 – Generate or load workload
+    gen = WorkloadGenerator(num_tasks=300)
+    gen.generate()
+
+    df_work = pd.read_csv("data/workloads.csv")
     sim = NetworkSimulator()
     all_records = []
 
     def make_nodes():
         return Node("Edge", 5, 2.0), Node("Cloud", 20, 8.0)
 
-    # Instantiate each orchestrator
     strategies = {
         "Random": RandomOrchestrator,
         "Rule": RuleBasedOrchestrator,
         "RL": RLBasedOrchestrator,
     }
 
-    for name, orch_class in strategies.items():
+    for name, OrchClass in strategies.items():
         edge, cloud = make_nodes()
         if name == "RL":
-            orch = orch_class(edge, cloud, episodes=200)
-            orch.simulate_environment()  # pre-train RL agent
+            orch = OrchClass(edge, cloud, episodes=200)
+            orch.simulate_environment()
         else:
-            orch = orch_class(edge, cloud)
+            orch = OrchClass(edge, cloud)
 
         latencies = []
-        for i in range(num_tasks):
-            task = Task(i, random.uniform(1, 10), random.choice(["high", "medium", "low"]))
+        for _, row in df_work.iterrows():
+            task = Task(int(row.task_id), float(row.size_mb), row.priority)
             if name == "RL":
                 node_name, latency = orch.assign_task(task)
-            else:
-                node = orch.edge if name == "Rule" and (task.size_mb < 5 or task.priority == "high") else random.choice([orch.edge, orch.cloud])
+            elif name == "Rule":
+                node = orch.edge if (task.size_mb < 5 or task.priority == "high") else orch.cloud
                 latency = node.execute_task(task, network_sim=sim)
                 node_name = node.name
-            all_records.append({"strategy": name, "node": node_name, "latency": latency})
+            else:  # Random
+                node = OrchClass(edge, cloud).edge if (name=="Random" and row.task_id%2==0) else cloud
+                latency = node.execute_task(task, network_sim=sim)
+                node_name = node.name
+            all_records.append({
+                "strategy": name,
+                "app_type": row.app_type,
+                "size_mb": row.size_mb,
+                "priority": row.priority,
+                "node": node_name,
+                "latency": latency
+            })
             latencies.append(latency)
-        print(f"✅ {name} orchestrator avg latency: {sum(latencies)/len(latencies):.2f} ms")
+        print(f"✅ {name} done | avg latency: {sum(latencies)/len(latencies):.2f} ms")
 
     df = pd.DataFrame(all_records)
-    df.to_csv("data/combined_results.csv", index=False)
-    plot_results(df)
+    df.to_csv("data/workload_results.csv", index=False)
+    plot_latency_by_app(df)
 
-def plot_results(df):
-    plt.figure(figsize=(8,5))
-    df.boxplot(column="latency", by="strategy", grid=True)
-    plt.title("Latency Comparison (Edge + Cloud Simulation)")
-    plt.suptitle("")  # remove extra header
+def plot_latency_by_app(df):
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+
+
+    plt.close('all')
+
+    # 🔹 Create a colored boxplot using seaborn
+    plt.figure(figsize=(9,6))
+    sns.boxplot(
+        x="app_type", 
+        y="latency", 
+        hue="strategy", 
+        data=df,
+        palette="Set2"   # soft color theme
+    )
+
+    plt.title("Latency Comparison per App Type & Strategy")
     plt.ylabel("Latency (ms)")
-    plt.savefig("data/combined_boxplot.png")
+    plt.xlabel("Application Type")
+    plt.legend(title="Strategy")
+    plt.xticks(rotation=15)
+    plt.tight_layout()
+
+    # 🔹 Save and display
+    plt.savefig("data/workload_comparison.png")
     plt.show()
 
 if __name__ == "__main__":
-    run_comparison()
+    run_with_workload()
