@@ -1,44 +1,65 @@
+# orchestrator/environment.py
+from __future__ import annotations
 import random
-import time
-import requests
+from dataclasses import dataclass
+from typing import Optional
+
+try:
+    # optional import so Week-6 still runs without the new file
+    from orchestrator.sim_interface import NetworkSimulator
+except Exception:  # pragma: no cover
+    NetworkSimulator = None  # type: ignore
+
+
+@dataclass
+# orchestrator/environment.py
 
 class Task:
-    """Represents a user task in a 5G network."""
-    def __init__(self, task_id, size_mb, priority):
+    """
+    Represents a computational task with an app type, size (MB), and priority.
+    """
+    def __init__(self, task_id, app_type, size_mb, priority):
         self.task_id = task_id
+        self.app_type = app_type
         self.size_mb = size_mb
         self.priority = priority
-        self.timestamp = time.time()
+
+    def __repr__(self):
+        return f"Task(id={self.task_id}, app={self.app_type}, size={self.size_mb}MB, prio={self.priority})"
+
 
 class Node:
-    """Represents Edge or Cloud node with compute power & latency."""
-    def __init__(self, name, base_latency_ms, cpu_capacity):
-        self.name = name
-        self.base_latency_ms = base_latency_ms
-        self.cpu_capacity = cpu_capacity  # simulated compute units
+    """
+    Represents a compute node — edge or cloud — capable of executing tasks.
+    """
+    def __init__(self, node_id, node_type, capacity_mbps):
+        self.node_id = node_id
+        self.node_type = node_type.lower()  # "edge" or "cloud"
+        self.capacity_mbps = capacity_mbps
+        self.current_load = 0.0
+        self.name = f"{self.node_type}_{self.node_id}"   # ✅ ensures main.py can use node.name
+
+    def execute_task(self, task, network_sim=None):
+        """
+        Executes a task on this node.
+        If a network simulator is provided, it adds latency accordingly.
+        """
+        # processing delay (seconds)
+        processing_time = task.size_mb / self.capacity_mbps
+
+        # network latency
+        net_latency = 0.0
+        if network_sim is not None:
+            try:
+                net_latency = network_sim.simulate_latency(self.node_type, task.app_type)
+            except Exception:
+                net_latency = 0.001  # fallback for safety
+
+        total_latency = (processing_time + net_latency) * 1000  # convert to ms
+        self.current_load += task.size_mb
+        return total_latency
+
+    def reset_load(self):
         self.current_load = 0.0
 
-    # orchestrator/environment.py  (replace only the execute_task method)
-    def execute_task(self, task, network_sim=None, cloud_url=None):
-        start = time.time()
-        # Base processing time (depends on CPU & task size)
-        proc_time = (task.size_mb / self.cpu_capacity) * 100.0
-        if network_sim:
-            net_latency = network_sim.get_latency(self.name, self.current_load)
-        else:
-            net_latency = self.base_latency_ms + random.uniform(0, 5)
-         # ☁️ optional real cloud call
-        if self.name.lower() == "cloud" and cloud_url:
-            try:
-                _ = requests.post(cloud_url, json={"task_id": task.task_id,
-                                                  "size_mb": task.size_mb,
-                                                  "priority": task.priority},
-                                  timeout=3)
-            except Exception as e:
-                print(f"[warn] cloud call failed: {e}")
-        total_latency = proc_time + net_latency
-        # update load slightly
-        self.current_load = min(1.0, self.current_load + 0.05)
-        end = time.time()
-        return total_latency + (end - start) * 1000  # convert s→ms
 
