@@ -1,120 +1,136 @@
-# train_rl.py  (WEEK 8)
+# train_rl.py  (Week 9 – Synthetic Workload Modeling)
 from __future__ import annotations
-import os
-import csv
-import random
-import pandas as pd
+import os, csv, random
+from datetime import datetime
+import numpy as np
 import matplotlib
-matplotlib.use("Agg")  # headless safe
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import seaborn as sns
 
-from orchestrator.environment import Node, Task
-from orchestrator.random_orchestrator import RandomOrchestrator
-from orchestrator.rule_orchestrator import RuleBasedOrchestrator
 from orchestrator.rl_orchestrator import RLBasedOrchestrator
+from orchestrator.environment import Task
 from orchestrator.sim_interface import get_simulator
+
 
 # ---------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------
-DATA_DIR = "data"
-WORKLOADS = os.path.join(DATA_DIR, "workloads.csv")
-OUT_CSV   = os.path.join(DATA_DIR, "workload_results.csv")
-OUT_PNG   = os.path.join(DATA_DIR, "workload_comparison.png")
+DATA_DIR   = "data"
+WORKLOADS  = os.path.join(DATA_DIR, "workloads.csv")
+OUT_WEIGHTS = os.path.join(DATA_DIR, "rl_weights.npy")
+OUT_CSV     = os.path.join(DATA_DIR, "workload_results.csv")
+OUT_PNG     = os.path.join(DATA_DIR, "workload_comparison.png")
+OUT_REWARD  = os.path.join(DATA_DIR, "reward_curve.png")
 
-# ---------------------------------------------------------------------
-# Utilities
 # ---------------------------------------------------------------------
 def ensure_dirs():
     os.makedirs(DATA_DIR, exist_ok=True)
 
+# ---------------------------------------------------------------------
+# Week 9: enhanced workload loader (backward compatible)
+# ---------------------------------------------------------------------
 def load_or_generate_workloads(n: int = 300) -> list[Task]:
+    """
+    Loads timestamped workloads (Week 9 schema) or falls back to legacy schema.
+    Compatible columns:
+        task_id, timestamp, app_type, size_mb, priority
+        task_id, app_type, size_mb, priority
+        task_id, size_mb, priority
+    """
     ensure_dirs()
     tasks: list[Task] = []
 
     if os.path.exists(WORKLOADS):
-        df = pd.read_csv(WORKLOADS)
-        for _, row in df.iterrows():
-            tasks.append(Task(int(row.task_id), row.app_type, float(row.size_mb), row.priority))
+        with open(WORKLOADS, "r") as f:
+            reader = csv.reader(f)
+            header = next(reader, [])
+            for row in reader:
+                if not row: 
+                    continue
+                try:
+                    # detect schema by column count
+                    if len(row) == 5:
+                        task_id, ts, app, size, prio = row
+                    elif len(row) == 4:
+                        task_id, app, size, prio = row
+                        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    else:  # old 3-col format
+                        task_id, size, prio = row
+                        ts, app = datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "IoT"
+
+                    tasks.append(Task(int(task_id), app, float(size), prio))
+                except Exception:
+                    continue
+        print(f"✅ Loaded {len(tasks)} tasks from {WORKLOADS}")
         return tasks
 
-    # Generate fresh workloads
+    # fallback: generate quick synthetic workload (rarely needed)
+    print("⚠️  workloads.csv not found – generating dummy data.")
     with open(WORKLOADS, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["task_id", "app_type", "size_mb", "priority"])
+        w.writerow(["task_id","timestamp","app_type","size_mb","priority"])
         for i in range(n):
-            app_type = random.choice(["IoT", "ARVR", "VANET"])
-            size = random.uniform(0.5, 12.0)
-            prio = random.choice(["high", "medium", "low"])
-            w.writerow([i, app_type, f"{size:.3f}", prio])
-            tasks.append(Task(i, app_type, size, prio))
+            app = random.choice(["IoT","ARVR","VANET"])
+            size = random.uniform(0.5,12.0)
+            prio = random.choice(["low","medium","high"])
+            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            w.writerow([i, ts, app, f"{size:.3f}", prio])
+            tasks.append(Task(i, app, size, prio))
     return tasks
 
+
 # ---------------------------------------------------------------------
-# Week 8 – Simulator Validation Run
+def plot_reward_curve(rewards: list[float]):
+    plt.figure()
+    plt.plot(range(1, len(rewards)+1), rewards)
+    plt.title("Episode reward (sum of −latency_ms) – higher is better")
+    plt.xlabel("Episode"); plt.ylabel("Total reward")
+    plt.tight_layout()
+    plt.savefig(OUT_REWARD, dpi=130); plt.close()
+
+
+def plot_latency_box(edge_lats, cloud_lats, path, title):
+    plt.figure()
+    plt.boxplot([edge_lats, cloud_lats], labels=["edge","cloud"], showmeans=True)
+    plt.title(title); plt.ylabel("Latency (ms)")
+    plt.tight_layout(); plt.savefig(path, dpi=130); plt.close()
+
+
 # ---------------------------------------------------------------------
 def train_and_eval():
     ensure_dirs()
-    SIM_CHOICE = os.getenv("SIM_TYPE", "simple")
+    SIM_CHOICE = os.getenv("SIM_TYPE","simple")
     sim = get_simulator(SIM_CHOICE)
     print(f"✅ Using simulator: {SIM_CHOICE}")
 
-    # Create edge and cloud nodes
-    edge = Node(0, "edge", 2.0)
-    cloud = Node(1, "cloud", 8.0)
+    # --- train --------------------------------------------------------
+    orch = RLBasedOrchestrator(sim=sim, episodes=300)
+    avg_lat_ms, rewards = orch.simulate_environment(num_tasks=300)
+    np.save(OUT_WEIGHTS, np.array([avg_lat_ms]))
+    plot_reward_curve(rewards)
 
-    tasks = load_or_generate_workloads(300)
+    # --- eval ---------------------------------------------------------
+    tasks = load_or_generate_workloads()
+    eval_orch = RLBasedOrchestrator(sim=sim, episodes=1, epsilon=0.0)
+    results = []
+    for t in tasks:
+        state = (t.app_type.lower(), t.priority.lower())
+        action = eval_orch.choose_action_greedy(state)
+        node, lat = eval_orch.assign_and_execute(t, action)
+        results.append((t.task_id, node, lat))
 
-    strategies = {
-        "Random": RandomOrchestrator(edge, cloud),
-        "Rule":   RuleBasedOrchestrator(edge, cloud),
-        "RL":     RLBasedOrchestrator(edge, cloud, episodes=50)  # stub for compatibility
-    }
+    with open(OUT_CSV, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["task_id","node","latency_ms"])
+        w.writerows(results)
 
-    all_records = []
-    for name, orch in strategies.items():
-        latencies = []
-        for t in tasks:
-            if name == "Rule":
-                node = orch.edge if (t.size_mb < 5 or t.priority == "high") else orch.cloud
-                latency = node.execute_task(t, network_sim=sim)
-                node_name = node.name
-            elif name == "Random":
-                node = orch.edge if random.choice([True, False]) else orch.cloud
-                latency = node.execute_task(t, network_sim=sim)
-                node_name = node.name
-            else:
-                # RL stub just randomly assigns too, no training yet
-                node = orch.edge if random.choice([True, False]) else orch.cloud
-                latency = node.execute_task(t, network_sim=sim)
-                node_name = node.name
+    edge = [lat for _,n,lat in results if "edge" in n.lower()]
+    cloud = [lat for _,n,lat in results if "cloud" in n.lower()]
+    plot_latency_box(edge, cloud, OUT_PNG, "Workload Latency Comparison (Week-9 RL)")
 
-            all_records.append({
-                "strategy": name,
-                "app_type": t.app_type,
-                "size_mb": t.size_mb,
-                "priority": t.priority,
-                "node": node_name,
-                "latency": latency
-            })
-            latencies.append(latency)
-        print(f"✅ {name} done | avg latency: {sum(latencies)/len(latencies):.2f} ms")
+    print("\n✅ Outputs:")
+    print(f"  {OUT_WEIGHTS}\n  {OUT_REWARD}\n  {OUT_CSV}\n  {OUT_PNG}")
 
-    df = pd.DataFrame(all_records)
-    df.to_csv(OUT_CSV, index=False)
-
-    # Visualization
-    plt.figure(figsize=(9,6))
-    sns.boxplot(x="app_type", y="latency", hue="strategy", data=df, palette="Set2")
-    plt.title("Week-8 Latency Comparison (Simulator Validation)")
-    plt.xlabel("Application Type")
-    plt.ylabel("Latency (ms)")
-    plt.tight_layout()
-    plt.savefig(OUT_PNG, dpi=130)
-    plt.close()
-
-    print(f"\n✅ Outputs generated:\n  {OUT_CSV}\n  {OUT_PNG}")
 
 # ---------------------------------------------------------------------
 if __name__ == "__main__":
