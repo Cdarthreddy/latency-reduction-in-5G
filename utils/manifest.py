@@ -1,13 +1,13 @@
 # utils/manifest.py
 import json, os, socket
-from datetime import datetime
+from datetime import datetime, timezone
 from config import RUN_ID, AWS_REGION, S3_BUCKET, get_s3_prefix
 
 def create_manifest(sim_type: str, episodes: int, tasks: int, avg_latency: float) -> dict:
     """Builds a manifest metadata dictionary."""
     manifest = {
         "run_id": RUN_ID,
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "simulator": sim_type,
         "episodes": episodes,
         "tasks": tasks,

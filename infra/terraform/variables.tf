@@ -23,12 +23,25 @@ variable "instance_type" {
 }
 
 variable "key_name" {
-  description = "SSH key name"
+  description = "SSH key name (optional - leave empty to not assign a key)"
   type        = string
+  default     = ""
 }
 
 variable "git_repo_url" {
   description = "GitHub repo to clone"
   type        = string
   default     = "https://github.com/rishichowdary539/LatencyReductionInCloud.git"
+}
+
+variable "create_cloudwatch_log_group" {
+  description = "Whether to create CloudWatch log group (set to false if it already exists)"
+  type        = bool
+  default     = true
+}
+
+variable "create_iam_resources" {
+  description = "Whether to create IAM role and policies (requires IAM permissions). Set to false if running Terraform from EC2 without admin permissions."
+  type        = bool
+  default     = true
 }

@@ -7,7 +7,7 @@ sudo apt-get install -y python3 python3-pip git
 
 # Clone your repo (replace with your real GitHub URL)
 cd /home/ubuntu
-git clone https://github.com/rishichowdary539/LatencyReductionInCloud.git
+git clone https://github.com/cdarthreddy/LatencyReductionInCloud.git
 cd LatencyReductionInCloud
 
 # Install Python dependencies

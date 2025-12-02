@@ -75,7 +75,7 @@ class WorkloadGenerator:
                 writer.writerow(task)
                 tasks.append(task)
 
-        print(f"✅ Generated {len(tasks)} tasks → {self.output_file}")
+        print(f"[OK] Generated {len(tasks)} tasks -> {self.output_file}")
         print(f"Example: {tasks[0]}")
         return self.output_file
 

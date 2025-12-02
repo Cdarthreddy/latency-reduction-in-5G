@@ -7,6 +7,19 @@ from typing import Tuple, Optional
 from orchestrator.environment import Task, Node
 from orchestrator.sim_interface import NetworkSimulator
 
+# Import safe print utility
+try:
+    from utils.console import safe_print
+except ImportError:
+    def safe_print(msg: str, fallback: str | None = None) -> None:
+        try:
+            print(msg)
+        except UnicodeEncodeError:
+            if fallback:
+                print(fallback)
+            else:
+                print(msg.encode('ascii', 'replace').decode('ascii'))
+
 
 class RLBasedOrchestrator:
     """
@@ -41,7 +54,8 @@ class RLBasedOrchestrator:
         self.gamma = gamma
 
         # Internal Q-table: {(state, action): value}
-        self.q_table: dict[tuple[tuple[str, str], int], float] = {}
+        # State format: (app_type, priority, size_category, load_category)
+        self.q_table: dict[tuple[tuple, int], float] = {}
 
     # ------------------------------------------------------------------
     # Helpers
@@ -53,14 +67,47 @@ class RLBasedOrchestrator:
         """Attach or replace the simulator dynamically."""
         self.sim = sim
 
-    def _get_state(self, task: Task) -> Tuple[str, str]:
-        """Represent state as (app_type, priority)."""
-        return (task.app_type.lower(), task.priority.lower())
+    def _get_state(self, task: Task, edge_load: float = 0.0, cloud_load: float = 0.0) -> tuple:
+        """
+        Represent state as (app_type, priority, size_category, load_category).
+        
+        Enhanced state representation includes:
+        - app_type: Application type (iot, arvr, vanet)
+        - priority: Task priority (low, medium, high)
+        - size_category: Task size category (small, medium, large)
+        - load_category: Node load category (low, medium, high)
+        """
+        app_type = task.app_type.lower()
+        priority = task.priority.lower()
+        
+        # Categorize task size
+        if task.size_mb < 2.0:
+            size_category = "small"
+        elif task.size_mb < 8.0:
+            size_category = "medium"
+        else:
+            size_category = "large"
+        
+        # Determine which node's load to use (will be set based on action)
+        # For now, use average load as approximation
+        avg_load = (edge_load + cloud_load) / 2.0
+        # Normalize load (assuming max capacity of 100MB)
+        normalized_load = min(1.0, max(0.0, avg_load / 100.0))
+        
+        # Categorize load
+        if normalized_load < 0.33:
+            load_category = "low"
+        elif normalized_load < 0.67:
+            load_category = "medium"
+        else:
+            load_category = "high"
+        
+        return (app_type, priority, size_category, load_category)
 
-    def _get_q(self, state: Tuple[str, str], action: int) -> float:
+    def _get_q(self, state: tuple, action: int) -> float:
         return self.q_table.get((state, action), 0.0)
 
-    def _set_q(self, state: Tuple[str, str], action: int, value: float):
+    def _set_q(self, state: tuple, action: int, value: float):
         self.q_table[(state, action)] = value
 
     # ------------------------------------------------------------------
@@ -75,7 +122,7 @@ class RLBasedOrchestrator:
         latency = node.execute_task(task, network_sim=self.sim)
         return (node.name, latency)
 
-    def choose_action(self, state: Tuple[str, str]) -> int:
+    def choose_action(self, state: tuple) -> int:
         """ε-greedy policy."""
         if random.random() < self.epsilon:
             return random.choice([0, 1])
@@ -83,13 +130,13 @@ class RLBasedOrchestrator:
         q_cloud = self._get_q(state, 1)
         return 0 if q_edge >= q_cloud else 1
 
-    def choose_action_greedy(self, state: Tuple[str, str]) -> int:
+    def choose_action_greedy(self, state: tuple) -> int:
         """Purely greedy policy (ε=0) used for evaluation."""
         q_edge = self._get_q(state, 0)
         q_cloud = self._get_q(state, 1)
         return 0 if q_edge >= q_cloud else 1
 
-    def update_q(self, state: Tuple[str, str], action: int, reward: float, next_state: Tuple[str, str]):
+    def update_q(self, state: tuple, action: int, reward: float, next_state: tuple):
         """Standard Q-learning update."""
         old_q = self._get_q(state, action)
         next_q = max(self._get_q(next_state, a) for a in [0, 1])
@@ -101,18 +148,23 @@ class RLBasedOrchestrator:
     # ------------------------------------------------------------------
     def simulate_environment(self, num_tasks: int = 300):
         """Runs Q-learning episodes using the injected simulator."""
-        print("🚀 Starting Q-Learning simulation...")
+        safe_print("[START] Starting Q-Learning simulation...", fallback="[START] Starting Q-Learning simulation...")
         total_rewards: list[float] = []
 
         for ep in range(self.episodes):
             episode_reward = 0.0
+            # Reset node loads at start of each episode
+            self.edge.reset_load()
+            self.cloud.reset_load()
+            
             for i in range(num_tasks):
                 app = random.choice(["IoT", "ARVR", "VANET"])
                 prio = random.choice(["high", "medium", "low"])
                 size = random.uniform(0.5, 12.0)
                 task = Task(i, app, size, prio)
 
-                state = self._get_state(task)
+                # Get state with current node loads
+                state = self._get_state(task, self.edge.current_load, self.cloud.current_load)
                 action = self.choose_action(state)
                 _, latency = self.assign_and_execute(task, action)
 
@@ -122,7 +174,8 @@ class RLBasedOrchestrator:
                                  random.choice(["IoT", "ARVR", "VANET"]),
                                  random.uniform(0.5, 12.0),
                                  random.choice(["high", "medium", "low"]))
-                next_state = self._get_state(next_task)
+                # Get next state with updated node loads
+                next_state = self._get_state(next_task, self.edge.current_load, self.cloud.current_load)
                 self.update_q(state, action, reward, next_state)
 
                 episode_reward += reward
@@ -136,9 +189,10 @@ class RLBasedOrchestrator:
                 avg_r = np.mean(total_rewards[-20:])
                 print(f"Episode {ep+1:3d}/{self.episodes} | Avg reward (last 20): {avg_r:.2f}")
 
-        print("✅ RL training completed.")
+        safe_print("[OK] RL training completed.", fallback="[OK] RL training completed.")
         avg_latency = -np.mean(total_rewards[-10:]) / num_tasks
-        print(f"✅ RL done | avg latency: {avg_latency:.2f} ms")
+        safe_print(f"[OK] RL done | avg latency: {avg_latency:.2f} ms", 
+                   fallback=f"[OK] RL done | avg latency: {avg_latency:.2f} ms")
         return avg_latency, total_rewards
 
     # ------------------------------------------------------------------
@@ -147,21 +201,21 @@ class RLBasedOrchestrator:
     def save_weights(self, path: str) -> None:
         """Save Q-table to .npy file."""
         if not self.q_table:
-            print("⚠️ No Q-table to save.")
+            safe_print("[WARN] No Q-table to save.", fallback="[WARN] No Q-table to save.")
             return
         arr = np.array(list(self.q_table.items()), dtype=object)
         np.save(path, arr, allow_pickle=True)
-        print(f"💾 Saved Q-table → {path}")
+        safe_print(f"[SAVE] Saved Q-table -> {path}", fallback=f"[SAVE] Saved Q-table -> {path}")
 
     def load_weights(self, path: str) -> bool:
         """Load Q-table from .npy file."""
         try:
             arr = np.load(path, allow_pickle=True)
             self.q_table = {tuple(k): v for k, v in arr}
-            print(f"📂 Loaded Q-table from {path}")
+            safe_print(f"[LOAD] Loaded Q-table from {path}", fallback=f"[LOAD] Loaded Q-table from {path}")
             return True
         except Exception as e:
-            print(f"⚠️ Could not load Q-table: {e}")
+            safe_print(f"[WARN] Could not load Q-table: {e}", fallback=f"[WARN] Could not load Q-table: {e}")
             return False
 def get_simulator(sim_type: str) -> NetworkSimulator:
     """Factory to get the desired simulator instance."""

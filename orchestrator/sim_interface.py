@@ -19,8 +19,19 @@ class NetworkSimulator:
         self.base_edge_latency = base_edge_latency
         self.base_cloud_latency = base_cloud_latency
 
-    def simulate_latency(self, node_type: str, app_type: str) -> float:
-        """Simulate latency for a given node and app type."""
+    def simulate_latency(self, node_type: str, app_type: str, task_size_mb: float = 1.0, node_load: float = 0.0) -> float:
+        """
+        Simulate latency for a given node and app type.
+        
+        Args:
+            node_type: Type of node ("edge" or "cloud")
+            app_type: Type of application
+            task_size_mb: Size of task in MB (optional, for enhanced simulators)
+            node_load: Current load on node in MB (optional, for enhanced simulators)
+        
+        Returns:
+            Latency in seconds
+        """
         node = str(node_type).lower()
 
         # --- base latency ---
@@ -98,6 +109,21 @@ class SimpleSimulator(NetworkSimulator):
             self.base_cloud_ms + (load * self.load_factor_ms) + backbone + size_jitter + noise,
         )
 
+    def simulate_latency(self, node_type: str, app_type: str, task_size_mb: float = 1.0, node_load: float = 0.0) -> float:
+        """
+        Override parent method to use advanced latency modeling.
+        Converts result from milliseconds to seconds for compatibility.
+        """
+        # Calculate normalized load (0.0 to 1.0)
+        # Assuming max capacity of 100MB for normalization
+        normalized_load = min(1.0, max(0.0, node_load / 100.0))
+        
+        # Use the advanced latency_ms method
+        latency_ms = self.latency_ms(node_type, normalized_load, task_size_mb)
+        
+        # Convert from milliseconds to seconds (as expected by Node.execute_task)
+        return latency_ms / 1000.0
+
 
 # ---------------------------------------------------------------------
 # Simu5G stub adapter (optional)
@@ -138,6 +164,20 @@ class Simu5GAdapter(NetworkSimulator):
             self._time.sleep(0.0005)
 
         return max(1.0, latency)
+
+    def simulate_latency(self, node_type: str, app_type: str, task_size_mb: float = 1.0, node_load: float = 0.0) -> float:
+        """
+        Override parent method to use Simu5G latency modeling.
+        Converts result from milliseconds to seconds for compatibility.
+        """
+        # Calculate normalized load (0.0 to 1.0)
+        normalized_load = min(1.0, max(0.0, node_load / 100.0))
+        
+        # Use the advanced latency_ms method
+        latency_ms = self.latency_ms(node_type, normalized_load, task_size_mb)
+        
+        # Convert from milliseconds to seconds (as expected by Node.execute_task)
+        return latency_ms / 1000.0
 
     def __repr__(self):
         return f"<Simu5GAdapter endpoint={self.endpoint}>"
