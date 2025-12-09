@@ -4,7 +4,7 @@ import random
 
 class RLAgent:
     """
-    Simple Approximate Q-Learning agent for Edge/Cloud task placement.
+    Approximate Q-Learning agent for Edge/Cloud task placement.
     """
 
     def __init__(self, learning_rate=0.1, discount_factor=0.9, epsilon=0.2):

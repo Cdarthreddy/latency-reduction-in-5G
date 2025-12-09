@@ -39,10 +39,12 @@ class Node:
         self.current_load = 0.0
         self.name = f"{self.node_type}_{self.node_id}"   # ensures main.py can use node.name
 
+
     def execute_task(self, task, network_sim=None):
         """
         Executes a task on this node.
         If a network simulator is provided, it adds latency accordingly.
+        Returns: (latency_ms, energy_joules)
         """
         # processing delay (seconds)
         processing_time = task.size_mb / self.capacity_mbps
@@ -51,10 +53,7 @@ class Node:
         net_latency = 0.0
         if network_sim is not None:
             try:
-                # Pass task size and current load to simulator for advanced modeling
-                # Check if simulator supports enhanced signature (new simulators)
                 if hasattr(network_sim, 'simulate_latency'):
-                    # Try enhanced signature first (with task_size_mb and node_load)
                     try:
                         net_latency = network_sim.simulate_latency(
                             self.node_type, 
@@ -63,17 +62,24 @@ class Node:
                             node_load=self.current_load
                         )
                     except TypeError:
-                        # Fallback to basic signature for backward compatibility
                         net_latency = network_sim.simulate_latency(self.node_type, task.app_type)
                 else:
                     net_latency = 0.001  # fallback
             except Exception as e:
-                # Fallback for safety
                 net_latency = 0.001
 
-        total_latency = (processing_time + net_latency) * 1000  # convert to ms
+        total_latency_sec = processing_time + net_latency
+        total_latency_ms = total_latency_sec * 1000  # convert to ms
+        
+        # Energy Calculation: Energy (J) = Power (W) * Time (s)
+        # Assumed Power Models:
+        # Edge: Idle 2W, Active 10W
+        # Cloud: Idle 10W, Active 50W (per allocation unit logic)
+        power_watts = 10.0 if self.node_type == "edge" else 50.0
+        energy_joules = power_watts * total_latency_sec
+
         self.current_load += task.size_mb
-        return total_latency
+        return total_latency_ms, energy_joules
 
     def reset_load(self):
         self.current_load = 0.0

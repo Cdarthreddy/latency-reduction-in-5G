@@ -1,6 +1,5 @@
 # orchestrator/simu5g_adapter.py
 """
-Week 8: Mock Simu5G integration.
 Pretends to query an external 5G network simulator (Simu5G/NS-3).
 """
 

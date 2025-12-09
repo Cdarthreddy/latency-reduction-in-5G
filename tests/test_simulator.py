@@ -3,7 +3,7 @@ Tests for network simulator implementations.
 """
 import pytest
 import numpy as np
-from orchestrator.sim_interface import NetworkSimulator, SimpleSimulator, Simu5GAdapter, get_simulator
+from orchestrator.sim_interface import NetworkSimulator, FiveGDistributedSimulator, Simu5GAdapter, get_simulator
 from orchestrator.environment import Task, Node
 
 
@@ -31,18 +31,18 @@ class TestNetworkSimulator:
         assert edge_lat < cloud_lat
 
 
-class TestSimpleSimulator:
-    """Test SimpleSimulator implementation."""
+class TestFiveGDistributedSimulator:
+    """Test FiveGDistributedSimulator implementation."""
     
     def test_simple_simulator_initialization(self):
-        """Test SimpleSimulator can be initialized."""
-        sim = SimpleSimulator()
-        assert sim.base_edge_ms == 5.0
-        assert sim.base_cloud_ms == 25.0
+        """Test FiveGDistributedSimulator can be initialized."""
+        sim = FiveGDistributedSimulator()
+        assert sim.base_edge_ms == 4.0  # Updated default
+        assert sim.base_cloud_ms == 20.0  # Updated default
     
     def test_simulate_latency_override(self):
         """Test that simulate_latency is properly overridden."""
-        sim = SimpleSimulator()
+        sim = FiveGDistributedSimulator()
         # Should use advanced modeling, not basic parent method
         latency = sim.simulate_latency("edge", "IoT", task_size_mb=1.0, node_load=0.0)
         assert latency > 0
@@ -51,21 +51,21 @@ class TestSimpleSimulator:
     
     def test_latency_ms_method(self):
         """Test latency_ms method directly."""
-        sim = SimpleSimulator()
+        sim = FiveGDistributedSimulator()
         latency = sim.latency_ms("edge", load=0.0, task_size_mb=1.0)
         assert latency > 0
         assert isinstance(latency, float)
     
     def test_load_affects_latency(self):
         """Test that higher load increases latency."""
-        sim = SimpleSimulator()
+        sim = FiveGDistributedSimulator()
         low_load = sim.simulate_latency("edge", "IoT", task_size_mb=1.0, node_load=0.0)
         high_load = sim.simulate_latency("edge", "IoT", task_size_mb=1.0, node_load=50.0)
         assert high_load > low_load
     
     def test_task_size_affects_latency(self):
         """Test that larger tasks have higher latency (on average)."""
-        sim = SimpleSimulator()
+        sim = FiveGDistributedSimulator()
         
         # Run multiple samples to account for random noise
         small_latencies = []
@@ -102,9 +102,9 @@ class TestSimulatorFactory:
     """Test simulator factory function."""
     
     def test_get_simple_simulator(self):
-        """Test getting SimpleSimulator from factory."""
+        """Test getting FiveGDistributedSimulator from factory."""
         sim = get_simulator("simple")
-        assert isinstance(sim, SimpleSimulator)
+        assert isinstance(sim, FiveGDistributedSimulator)
     
     def test_get_simu5g_simulator(self):
         """Test getting Simu5GAdapter from factory."""
@@ -121,12 +121,12 @@ class TestNodeWithSimulator:
     """Test Node integration with simulators."""
     
     def test_node_execute_task_with_simple_simulator(self):
-        """Test Node.execute_task works with SimpleSimulator."""
+        """Test Node.execute_task works with FiveGDistributedSimulator."""
         node = Node(0, "edge", 2.0)
         task = Task(1, "IoT", 1.0, "high")
-        sim = SimpleSimulator()
+        sim = FiveGDistributedSimulator()
         
-        latency = node.execute_task(task, network_sim=sim)
+        latency, _ = node.execute_task(task, network_sim=sim)
         assert latency > 0
         # Latency should include both processing and network delay
         assert latency > 100  # Should be in milliseconds
@@ -135,16 +135,16 @@ class TestNodeWithSimulator:
         """Test that node load affects latency through simulator."""
         node = Node(0, "edge", 2.0)
         task = Task(1, "IoT", 1.0, "high")
-        sim = SimpleSimulator()
+        sim = FiveGDistributedSimulator()
         
         # First task - no load
-        latency1 = node.execute_task(task, network_sim=sim)
+        latency1, _ = node.execute_task(task, network_sim=sim)
         
         # Add some load
         node.current_load = 50.0
         
         # Second task - with load
-        latency2 = node.execute_task(task, network_sim=sim)
+        latency2, _ = node.execute_task(task, network_sim=sim)
         
         # Latency should be higher with load
         assert latency2 > latency1

@@ -9,8 +9,6 @@ from datetime import datetime, timedelta
 
 class WorkloadGenerator:
     """
-    Week 9 – Enhanced synthetic workload generator.
-
     Produces realistic 5G-era workloads:
     - app types: IoT, ARVR, VANET
     - variable size distributions

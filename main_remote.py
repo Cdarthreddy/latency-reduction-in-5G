@@ -1,11 +1,3 @@
-"""
-Remote runner for EC2: executes training + evaluation + uploads artifacts to S3.
-Now extended for Week 11:
- - Generates manifest.json (metadata for reproducibility)
- - Uploads all artifacts including manifest to S3
- - CloudWatch logging and metrics (Week 11+)
-"""
-
 import os
 from orchestrator.workload_generator import WorkloadGenerator
 from train_rl import train_and_eval
@@ -68,7 +60,11 @@ def main():
         cw_logger.info("Starting RL training and evaluation phase")
     
     try:
-        avg_latency = train_and_eval()  # returns average latency
+        # Configuration from Environment
+        episodes = int(os.getenv("EPISODES", 1000))  # Default to 1000 to match train_rl default
+        sim_type = os.getenv("SIM_TYPE", "simple")  # Default to simple
+
+        avg_latency = train_and_eval(episodes=episodes, sim_type=sim_type)  # returns average latency
         if cw_metrics and avg_latency:
             cw_metrics.put_metric("TrainingAverageLatency", avg_latency, "Milliseconds",
                                 dimensions={"RunID": RUN_ID})

@@ -1,5 +1,5 @@
 """
-Enhanced CloudWatch logging and metrics utility for the orchestrator project.
+CloudWatch logging and metrics utility for the orchestrator project.
 Supports both log streaming and custom metrics publishing.
 """
 
@@ -43,10 +43,7 @@ class CloudWatchLogger:
         log_stream: Optional[str] = None,
         region: Optional[str] = None
     ):
-        """
-        Initialize CloudWatch logger.
-        
-        Args:
+        """ Args:
             log_group: CloudWatch log group name
             log_stream: Log stream name (auto-generated if None)
             region: AWS region (defaults to config or us-east-1)

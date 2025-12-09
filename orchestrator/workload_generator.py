@@ -72,11 +72,11 @@ class WorkloadGenerator:
         # Define app profiles (size ranges in MB)
         self.app_profiles = {
             "IoT": {
-                "size_range": (0.1, 1.0),
+                "size_range": (0.5, 3.0),
                 "priority_weights": {"low": 0.6, "medium": 0.3, "high": 0.1}
             },
             "ARVR": {
-                "size_range": (5.0, 20.0),
+                "size_range": (5.0, 12.0),
                 "priority_weights": {"low": 0.2, "medium": 0.5, "high": 0.3}
             },
             "VANET": {

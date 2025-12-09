@@ -31,7 +31,7 @@ variable "key_name" {
 variable "git_repo_url" {
   description = "GitHub repo to clone"
   type        = string
-  default     = "https://github.com/rishichowdary539/LatencyReductionInCloud.git"
+  default     = "https://github.com/cdarthreddy/LatencyReductionInCloud.git"
 }
 
 variable "create_cloudwatch_log_group" {

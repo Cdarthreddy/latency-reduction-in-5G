@@ -3,7 +3,7 @@ Tests for Node class and task execution.
 """
 import pytest
 from orchestrator.environment import Node, Task
-from orchestrator.sim_interface import NetworkSimulator, SimpleSimulator, Simu5GAdapter
+from orchestrator.sim_interface import NetworkSimulator, FiveGDistributedSimulator, Simu5GAdapter
 
 
 class TestNode:
@@ -30,8 +30,9 @@ class TestNode:
         node = Node(0, "edge", 2.0)
         task = Task(1, "IoT", 2.0, "high")
         
-        latency = node.execute_task(task)
+        latency, energy = node.execute_task(task)
         assert latency > 0
+        assert energy > 0
         # Processing time: 2.0 MB / 2.0 Mbps = 1.0 second = 1000 ms
         assert latency >= 1000
     
@@ -41,16 +42,16 @@ class TestNode:
         task = Task(1, "IoT", 2.0, "high")
         sim = NetworkSimulator()
         
-        latency = node.execute_task(task, network_sim=sim)
+        latency, energy = node.execute_task(task, network_sim=sim)
         assert latency > 1000  # Should include network latency
     
     def test_execute_task_with_simple_simulator(self):
-        """Test task execution with SimpleSimulator (enhanced modeling)."""
+        """Test task execution with FiveGDistributedSimulator (enhanced modeling)."""
         node = Node(0, "edge", 2.0)
         task = Task(1, "IoT", 2.0, "high")
-        sim = SimpleSimulator()
+        sim = FiveGDistributedSimulator()
         
-        latency = node.execute_task(task, network_sim=sim)
+        latency, energy = node.execute_task(task, network_sim=sim)
         assert latency > 1000  # Should include network latency
     
     def test_execute_task_updates_load(self):
@@ -71,16 +72,16 @@ class TestNode:
         """Test that node load affects latency when using simulator."""
         node = Node(0, "edge", 2.0)
         task = Task(1, "IoT", 1.0, "high")
-        sim = SimpleSimulator()
+        sim = FiveGDistributedSimulator()
         
         # First execution - no load
-        latency1 = node.execute_task(task, network_sim=sim)
+        latency1, _ = node.execute_task(task, network_sim=sim)
         
         # Add load
         node.current_load = 50.0
         
         # Second execution - with load
-        latency2 = node.execute_task(task, network_sim=sim)
+        latency2, _ = node.execute_task(task, network_sim=sim)
         
         # Latency should be higher with load (due to simulator modeling)
         assert latency2 > latency1
@@ -102,8 +103,8 @@ class TestNode:
         cloud = Node(1, "cloud", 8.0)  # Higher capacity
         task = Task(1, "IoT", 8.0, "high")
         
-        edge_latency = edge.execute_task(task)
-        cloud_latency = cloud.execute_task(task)
+        edge_latency, _ = edge.execute_task(task)
+        cloud_latency, _ = cloud.execute_task(task)
         
         # Edge should take longer for processing (8.0 MB / 2.0 Mbps = 4s)
         # Cloud should be faster (8.0 MB / 8.0 Mbps = 1s)
@@ -118,8 +119,8 @@ class TestNode:
         small_task = Task(1, "IoT", 1.0, "high")
         large_task = Task(2, "ARVR", 10.0, "high")
         
-        small_latency = node.execute_task(small_task)
-        large_latency = node.execute_task(large_task)
+        small_latency, _ = node.execute_task(small_task)
+        large_latency, _ = node.execute_task(large_task)
         
         assert large_latency > small_latency
     
@@ -127,13 +128,13 @@ class TestNode:
         """Test that simulator receives task size and load information."""
         node = Node(0, "edge", 2.0)
         task = Task(1, "IoT", 5.0, "high")
-        sim = SimpleSimulator()
+        sim = FiveGDistributedSimulator()
         
         # Add some load
         node.current_load = 20.0
         
         # Execute task - simulator should receive task size and load
-        latency = node.execute_task(task, network_sim=sim)
+        latency, _ = node.execute_task(task, network_sim=sim)
         
         # Verify it executed (latency > 0)
         assert latency > 0

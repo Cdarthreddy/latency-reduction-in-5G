@@ -66,7 +66,7 @@ metrics.put_metric("AverageLatency", 123.45, "Milliseconds")
 ```python
 from utils.console import safe_print
 
-safe_print("✅ Training complete!")
+safe_print("Training complete!")
 # Falls back to "[OK] Training complete!" on encoding errors
 ```
 

@@ -5,9 +5,7 @@ import sys
 
 
 def safe_print(message: str, fallback: str | None = None) -> None:
-    """
-    Print message with fallback for Windows console encoding issues.
-    
+    """ 
     Args:
         message: Message to print (may contain Unicode characters)
         fallback: Fallback message if encoding fails (default: strip emojis)
@@ -21,14 +19,14 @@ def safe_print(message: str, fallback: str | None = None) -> None:
             # Remove common emoji characters
             fallback_msg = message
             emoji_replacements = {
-                '✅': '[OK]',
-                '⚠️': '[WARN]',
-                '🚀': '[START]',
-                '📦': '[UPLOAD]',
-                '💾': '[SAVE]',
-                '📂': '[LOAD]',
-                '→': '->',
-                '⚙️': '[CONFIG]',
+                '[OK]': '[OK]',
+                '[WARN]': '[WARN]',
+                '[START]': '[START]',
+                '[UPLOAD]': '[UPLOAD]',
+                '[SAVE]': '[SAVE]',
+                '[LOAD]': '[LOAD]',
+                '-\u003e': '-\u003e',
+                '[CONFIG]': '[CONFIG]',
             }
             for emoji, replacement in emoji_replacements.items():
                 fallback_msg = fallback_msg.replace(emoji, replacement)
